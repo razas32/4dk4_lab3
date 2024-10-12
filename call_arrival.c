@@ -39,6 +39,8 @@
  * Function to schedule a call arrival event. 
  */
 
+
+
 long int
 schedule_call_arrival_event(Simulation_Run_Ptr simulation_run, 
 			    double event_time)
@@ -71,30 +73,57 @@ call_arrival_event(Simulation_Run_Ptr simulation_run, void * ptr)
   sim_data = simulation_run_data(simulation_run);
   sim_data->call_arrival_count++;
 
-  /* See if there is a free channel.*/
+  new_call = (Call_Ptr) xmalloc(sizeof(Call));
+  new_call->arrive_time = now;
+  new_call->call_duration = get_call_duration();
+  new_call->patience = exponential_generator(MEAN_PATIENCE_TIME);
+
   if((free_channel = get_free_channel(simulation_run)) != NULL) {
-
-    /* Yes, we found one. Allocate some memory and start the call. */
-    new_call = (Call_Ptr) xmalloc(sizeof(Call));
-    new_call->arrive_time = now;
-    new_call->call_duration = get_call_duration();
-
-    /* Place the call in the free channel and schedule its
-       departure. */
     server_put(free_channel, (void*) new_call);
     new_call->channel = free_channel;
-
     schedule_end_call_on_channel_event(simulation_run,
 				       now + new_call->call_duration,
 				       (void *) free_channel);
   } else {
-    /* No free channel was found. The call is blocked. */
-    sim_data->blocked_call_count++;
+    fifoqueue_put(sim_data->call_queue, (void*) new_call);
+    sim_data->calls_that_waited++;  // Add this line
+    schedule_call_hangup_event(simulation_run, now + new_call->patience, (void*) new_call);
   }
 
-  /* Schedule the next call arrival. */
   schedule_call_arrival_event(simulation_run,
-	      now + exponential_generator((double) 1/Call_ARRIVALRATE));
+			      now + exponential_generator((double) 1/Call_ARRIVALRATE));
+}
+
+long int
+schedule_call_hangup_event(Simulation_Run_Ptr simulation_run,
+                           double event_time,
+                           void * call)
+{
+  Event new_event;
+
+  new_event.description = "Call Hangup";
+  new_event.function = call_hangup_event;
+  new_event.attachment = call;
+
+  return simulation_run_schedule_event(simulation_run, new_event, event_time);
+}
+
+void
+call_hangup_event(Simulation_Run_Ptr simulation_run, void * ptr)
+{
+  Call_Ptr call = (Call_Ptr) ptr;
+  Simulation_Run_Data_Ptr sim_data = simulation_run_data(simulation_run);
+  int queue_size = fifoqueue_size(sim_data->call_queue);
+  
+  for (int i = 0; i < queue_size; i++) {
+    Call_Ptr queued_call = (Call_Ptr) fifoqueue_get(sim_data->call_queue);
+    if (queued_call == call) {
+      sim_data->abandoned_call_count++;
+      xfree((void*) call);
+    } else {
+      fifoqueue_put(sim_data->call_queue, (void*) queued_call);
+    }
+  }
 }
 
 /*******************************************************************************/

@@ -40,77 +40,73 @@ int NUMBER_OF_CHANNELS;
 double Call_ARRIVALRATE;
 
 /*******************************************************************************/
-
-#define NUM_CHANNELS 20
-#define TARGET_BLOCKING_PROB 0.01
-#define TOLERANCE 0.001
-#define MAX_LOAD 100
+double MEAN_PATIENCE_TIME;
 
 int main(void)
 {
-  int i;
+  int i, j;
+  int n_operators[] = {5, 10};
+  double mean_patience_times[] = {5, 10};  // w values in minutes
+  double offered_loads[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+
   Simulation_Run_Ptr simulation_run;
   Simulation_Run_Data data;
 
-  FILE *fp = fopen("max_load_results.csv", "w");
-  fprintf(fp, "Channels,MaxOfferedLoad\n");
+  FILE *fp = fopen("waiting_probability_results.csv", "w");
+  fprintf(fp, "OfferedLoad,Operators,MeanPatienceTime,WaitingProbability\n");
 
   unsigned RANDOM_SEEDS[] = {RANDOM_SEED_LIST, 0};
+  unsigned random_seed;
 
-  for (i = 1; i <= NUM_CHANNELS; i++) {
-    NUMBER_OF_CHANNELS = i;
-    double min_load = 0, max_load = MAX_LOAD, current_load;
+  for (i = 0; i < sizeof(n_operators) / sizeof(n_operators[0]); i++) {
+    for (j = 0; j < sizeof(mean_patience_times) / sizeof(mean_patience_times[0]); j++) {
+      for (int k = 0; k < sizeof(offered_loads) / sizeof(offered_loads[0]); k++) {
+        NUMBER_OF_CHANNELS = n_operators[i];
+        MEAN_PATIENCE_TIME = mean_patience_times[j] * 60; // Convert to seconds
+        double current_offered_load = offered_loads[k];
+        Call_ARRIVALRATE = current_offered_load / MEAN_CALL_DURATION;
 
-    while (max_load - min_load > TOLERANCE) {
-      current_load = (min_load + max_load) / 2;
-      Call_ARRIVALRATE = current_load / MEAN_CALL_DURATION;
-
-      double total_blocking_prob = 0;
-      int num_seeds = 0;
-
-      while (RANDOM_SEEDS[num_seeds] != 0) {
         simulation_run = simulation_run_new();
         simulation_run_set_data(simulation_run, (void *)&data);
 
         data = (Simulation_Run_Data) {0};
-        data.random_seed = RANDOM_SEEDS[num_seeds];
+        data.call_queue = fifoqueue_new();
 
-        data.channels = (Channel_Ptr *)xcalloc(NUMBER_OF_CHANNELS, sizeof(Channel_Ptr));
-        for (int k = 0; k < NUMBER_OF_CHANNELS; k++) {
-          *(data.channels + k) = server_new();
+        data.channels = (Channel_Ptr *)xcalloc((int)NUMBER_OF_CHANNELS, sizeof(Channel_Ptr));
+        for (int m = 0; m < NUMBER_OF_CHANNELS; m++) {
+          *(data.channels + m) = server_new();
         }
 
-        random_generator_initialize(data.random_seed);
+        random_seed = RANDOM_SEEDS[0];  // Use the first seed
+        random_generator_initialize((unsigned)random_seed);
+
         schedule_call_arrival_event(simulation_run,
                                     simulation_run_get_time(simulation_run) +
                                         exponential_generator((double)1 / Call_ARRIVALRATE));
 
-        while (data.number_of_calls_processed < RUNLENGTH) {
-          simulation_run_execute_event(simulation_run);
-        }
+while (data.number_of_calls_processed < RUNLENGTH) {
+  simulation_run_execute_event(simulation_run);
+}
 
-        double blocking_prob = (double)data.blocked_call_count / data.call_arrival_count;
-        total_blocking_prob += blocking_prob;
+double waiting_probability = (double)data.calls_that_waited / data.call_arrival_count;
+
+printf("Debug: calls_that_waited=%ld, call_arrival_count=%ld, waiting_probability=%.6f\n",
+       data.calls_that_waited, data.call_arrival_count, waiting_probability);
+
+fprintf(fp, "%.2f,%d,%.0f,%.6f\n", current_offered_load, NUMBER_OF_CHANNELS, MEAN_PATIENCE_TIME/60, waiting_probability);
+
+
+        fprintf(fp, "%.2f,%d,%.0f,%.6f\n", current_offered_load, NUMBER_OF_CHANNELS, MEAN_PATIENCE_TIME/60, waiting_probability);
+        printf("Completed simulation for %d operators, %.0f minutes mean patience time, and %.2f offered load\n", 
+               NUMBER_OF_CHANNELS, MEAN_PATIENCE_TIME/60, current_offered_load);
 
         cleanup(simulation_run);
-        num_seeds++;
-      }
-
-      double avg_blocking_prob = total_blocking_prob / num_seeds;
-
-      if (avg_blocking_prob > TARGET_BLOCKING_PROB) {
-        max_load = current_load;
-      } else {
-        min_load = current_load;
       }
     }
-
-    fprintf(fp, "%d,%.2f\n", NUMBER_OF_CHANNELS, current_load);
-    printf("Completed calculation for %d channels. Max load: %.2f\n", NUMBER_OF_CHANNELS, current_load);
   }
 
   fclose(fp);
-  printf("Calculations complete. Results written to max_load_results.csv\n");
+  printf("Simulation complete. Results written to waiting_probability_results.csv\n");
 
   return 0;
 }

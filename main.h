@@ -43,6 +43,9 @@ typedef struct _call_
 {
   double arrive_time;
   double call_duration;
+
+  double patience;
+
   Channel_Ptr channel;
 } Call, * Call_Ptr;
 
@@ -56,6 +59,12 @@ typedef struct _simulation_run_data_
   long int number_of_calls_processed;
   double accumulated_call_time;
   unsigned random_seed;
+
+  long int abandoned_call_count;
+  double accumulated_wait_time;
+  long int calls_that_waited;
+  Fifoqueue_Ptr call_queue;
+
 } Simulation_Run_Data, * Simulation_Run_Data_Ptr;
 
 /*******************************************************************************/

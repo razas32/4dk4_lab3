@@ -39,6 +39,8 @@
 int NUMBER_OF_CHANNELS;
 double Call_ARRIVALRATE;
 
+extern double MEAN_PATIENCE_TIME;
+
 /* Comma separated list of random seeds to run. */
 #define RANDOM_SEED_LIST 333333, 444444, 400394381, 400338538, 881697, 3816127, 873834, 7810562, 1402813, 2033860
 
